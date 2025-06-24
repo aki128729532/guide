@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>ガイド</title>
+  <style>
+    canvas {
+      border: 1px solid #000;
+      touch-action: none;
+      display: block;
+      margin-bottom: 10px;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .controls {
+      margin-top: 10px;
+    }
+
+    #dropzone {
+      border: 2px dashed #aaa;
+      padding: 10px;
+      text-align: center;
+      margin-bottom: 10px;
+      color: #666;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    #dropzone.dragover {
+      border-color: #0088ff;
+      background-color: #eef8ff;
+      color: #004a99;
+    }
+  </style>
+</head>
+<body>
+  <h3>ガイド</h3>
+
+  <div id="dropzone" tabindex="0">ここにスクリーンショット画像をドラッグ＆ドロップ、またはクリックしてファイルを選択</div>
+  <input type="file" id="fileInput" accept="image/*" style="display:none" />
+  <button id="load-latest">最新スクショ読み込み</button>
+  <input type="file" id="latestInput" accept="image/*" webkitdirectory mozdirectory style="display:none" />
+
+  <canvas id="canvas" width="400" height="400"></canvas>
+
+  <div class="controls">
+    <button id="mode-char">キャラ位置指定</button>
+    <button id="mode-route">ルート描画</button><br>
+    上: <input type="number" id="top" value="0" style="width:50px;">
+    下: <input type="number" id="bottom" value="400" style="width:50px;">
+    左: <input type="number" id="left" value="0" style="width:50px;">
+    右: <input type="number" id="right" value="400" style="width:50px;"><br>
+    反射数: <input type="number" id="bounces" value="3" style="width:50px;">
+  </div>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const dropzone = document.getElementById("dropzone");
+    const fileInput = document.getElementById("fileInput");
+    const fileInputLatest = document.getElementById("latestInput");
+
+    let mode = "char";
+    let charPos = null;
+    let walls = { top: 0, bottom: 400, left: 0, right: 400 };
+    let bounces = 3;
+
+    let isDrawing = false;
+    let dragStart = null;
+    let dragCurrent = null;
+
+    let lastPath = null;
+    let lastInvPath = null;
+
+    let bgImage = null;
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (bgImage) {
+        ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+      }
+
+      ctx.strokeStyle = "blue";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(walls.left, walls.top, walls.right - walls.left, walls.bottom - walls.top);
+
+      if (charPos) {
+        ctx.fillStyle = "red";
+        ctx.beginPath();
+        ctx.arc(charPos.x, charPos.y, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if (isDrawing && charPos && dragCurrent && dragStart) {
+        const shotDir = {
+          x: dragStart.x - dragCurrent.x,
+          y: dragStart.y - dragCurrent.y
+        };
+        const path = calculatePath(charPos, {
+          x: charPos.x + shotDir.x,
+          y: charPos.y + shotDir.y
+        }, walls, bounces);
+        drawPath(path, "gray");
+
+        const invPath = calculatePath(charPos, {
+          x: charPos.x - shotDir.x,
+          y: charPos.y - shotDir.y
+        }, walls, 1);
+        drawPath(invPath, "orange");
+      }
+
+      if (!isDrawing && lastPath) {
+        drawPath(lastPath, "green");
+      }
+      if (!isDrawing && lastInvPath) {
+        drawPath(lastInvPath, "orange");
+      }
+    }
+
+    function calculatePath(start, end, walls, bounces) {
+      let path = [{ x: start.x, y: start.y }];
+      let dx = end.x - start.x;
+      let dy = end.y - start.y;
+      let dir = { x: dx, y: dy };
+      let pos = { x: start.x, y: start.y };
+      let count = 0;
+      while (count < bounces) {
+        let tX = dir.x > 0 ? (walls.right - pos.x) / dir.x : (walls.left - pos.x) / dir.x;
+        let tY = dir.y > 0 ? (walls.bottom - pos.y) / dir.y : (walls.top - pos.y) / dir.y;
+        let t = Math.min(tX, tY);
+        pos.x += dir.x * t;
+        pos.y += dir.y * t;
+        path.push({ x: pos.x, y: pos.y });
+        if (tX < tY) {
+          dir.x *= -1;
+        } else {
+          dir.y *= -1;
+        }
+        count++;
+      }
+      return path;
+    }
+
+    function drawPath(path, color = "green") {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(path[0].x, path[0].y);
+      for (let p of path.slice(1)) {
+        ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+    }
+
+    canvas.addEventListener("pointerdown", e => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      if (mode === "char") {
+        charPos = { x, y };
+        lastPath = null;
+        lastInvPath = null;
+        draw();
+      } else if (mode === "route" && charPos) {
+        isDrawing = true;
+        dragStart = { x, y };
+        dragCurrent = { x, y };
+        draw();
+      }
+    });
+
+    canvas.addEventListener("pointermove", e => {
+      if (isDrawing && charPos) {
+        const rect = canvas.getBoundingClientRect();
+        dragCurrent = {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        };
+        draw();
+      }
+    });
+
+    canvas.addEventListener("pointerup", e => {
+      if (isDrawing && charPos) {
+        isDrawing = false;
+        const rect = canvas.getBoundingClientRect();
+        dragCurrent = {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        };
+        const shotDir = {
+          x: dragStart.x - dragCurrent.x,
+          y: dragStart.y - dragCurrent.y
+        };
+        lastPath = calculatePath(charPos, {
+          x: charPos.x + shotDir.x,
+          y: charPos.y + shotDir.y
+        }, walls, bounces);
+        lastInvPath = calculatePath(charPos, {
+          x: charPos.x - shotDir.x,
+          y: charPos.y - shotDir.y
+        }, walls, 1);
+        draw();
+      }
+    });
+
+    document.getElementById("mode-char").onclick = () => {
+      mode = "char";
+      isDrawing = false;
+      dragStart = null;
+      dragCurrent = null;
+      lastPath = null;
+      lastInvPath = null;
+      draw();
+    };
+
+    document.getElementById("mode-route").onclick = () => {
+      mode = "route";
+    };
+
+    ["top", "bottom", "left", "right", "bounces"].forEach(id => {
+      document.getElementById(id).onchange = () => {
+        walls.top = parseInt(document.getElementById("top").value);
+        walls.bottom = parseInt(document.getElementById("bottom").value);
+        walls.left = parseInt(document.getElementById("left").value);
+        walls.right = parseInt(document.getElementById("right").value);
+        bounces = parseInt(document.getElementById("bounces").value);
+        draw();
+      };
+    });
+
+    dropzone.addEventListener("dragover", e => {
+      e.preventDefault();
+      dropzone.classList.add("dragover");
+    });
+
+    dropzone.addEventListener("dragleave", e => {
+      e.preventDefault();
+      dropzone.classList.remove("dragover");
+    });
+
+    dropzone.addEventListener("drop", e => {
+      e.preventDefault();
+      dropzone.classList.remove("dragover");
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        loadImage(files[0]);
+      }
+    });
+
+    dropzone.addEventListener("click", () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files.length > 0) {
+        loadImage(fileInput.files[0]);
+      }
+    });
+
+    // 最新画像読み込みボタン
+    document.getElementById("load-latest").onclick = () => {
+      fileInputLatest.click();
+    };
+
+    fileInputLatest.addEventListener("change", () => {
+      const files = Array.from(fileInputLatest.files).filter(file =>
+        file.type.startsWith("image/")
+      );
+      if (files.length === 0) {
+        alert("画像ファイルが見つかりませんでした");
+        return;
+      }
+      files.sort((a, b) => b.lastModified - a.lastModified); // 新しい順
+      loadImage(files[0]);
+    });
+
+    function loadImage(file) {
+      if (!file.type.startsWith("image/")) {
+        alert("画像ファイルを選択してください");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+
+          walls.top = 0;
+          walls.left = 0;
+          walls.right = img.width;
+          walls.bottom = img.height;
+
+          document.getElementById("top").value = walls.top;
+          document.getElementById("bottom").value = walls.bottom;
+          document.getElementById("left").value = walls.left;
+          document.getElementById("right").value = walls.right;
+
+          bgImage = img;
+          draw();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    draw();
+  </script>
+</body>
+</html>
