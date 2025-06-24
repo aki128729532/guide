@@ -63,6 +63,7 @@
 
     let mode = "char";
     let charPos = null;
+    let draggingChar = false;
     let walls = { top: 0, bottom: 400, left: 0, right: 400 };
     let bounces = 3;
 
@@ -145,7 +146,7 @@
 
     function drawPath(path, color = "green") {
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 5;
       ctx.beginPath();
       ctx.moveTo(path[0].x, path[0].y);
       for (let p of path.slice(1)) {
@@ -158,11 +159,16 @@
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
+
       if (mode === "char") {
-        charPos = { x, y };
-        lastPath = null;
-        lastInvPath = null;
-        draw();
+        if (charPos && Math.hypot(charPos.x - x, charPos.y - y) <= 15) {
+          draggingChar = true;
+        } else {
+          charPos = { x, y };
+          lastPath = null;
+          lastInvPath = null;
+          draw();
+        }
       } else if (mode === "route" && charPos) {
         isDrawing = true;
         dragStart = { x, y };
@@ -172,17 +178,22 @@
     });
 
     canvas.addEventListener("pointermove", e => {
-      if (isDrawing && charPos) {
-        const rect = canvas.getBoundingClientRect();
-        dragCurrent = {
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top
-        };
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (draggingChar) {
+        charPos = { x, y };
+        draw();
+      } else if (isDrawing && charPos) {
+        dragCurrent = { x, y };
         draw();
       }
     });
 
     canvas.addEventListener("pointerup", e => {
+      draggingChar = false;
+
       if (isDrawing && charPos) {
         isDrawing = false;
         const rect = canvas.getBoundingClientRect();
@@ -209,6 +220,7 @@
     document.getElementById("mode-char").onclick = () => {
       mode = "char";
       isDrawing = false;
+      draggingChar = false;
       dragStart = null;
       dragCurrent = null;
       lastPath = null;
@@ -260,7 +272,6 @@
       }
     });
 
-    // 最新画像読み込みボタン
     document.getElementById("load-latest").onclick = () => {
       fileInputLatest.click();
     };
@@ -273,7 +284,7 @@
         alert("画像ファイルが見つかりませんでした");
         return;
       }
-      files.sort((a, b) => b.lastModified - a.lastModified); // 新しい順
+      files.sort((a, b) => b.lastModified - a.lastModified);
       loadImage(files[0]);
     });
 
